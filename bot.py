@@ -41,6 +41,8 @@ def check_daft():
                 
                 send_telegram("New room found:\n" + full_link)
 
+send_telegram("✅ Bot started and test message")
+
 while True:
     
     try:
