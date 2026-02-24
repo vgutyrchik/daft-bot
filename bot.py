@@ -1,81 +1,66 @@
-import os
-import time
 import requests
+import time
+import telegram
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+BOT_TOKEN = "8202785705:AAFbclnPKtYfWD89bGQZwII_O15E4ZtnjLc"
+CHAT_ID = "588443934"
 
-sent_ids = set()
+bot = telegram.Bot(token=BOT_TOKEN)
+
+URL = "https://gateway.daft.ie/old/v1/listings"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json"
+    "Accept": "application/json",
+    "Origin": "https://www.daft.ie",
+    "Referer": "https://www.daft.ie/"
 }
-
-API_URL = "https://gateway.daft.ie/old/v1/search"
 
 PARAMS = {
     "location": "dublin-city",
-    "adType": "sharing",
-    "maxPrice": "900",
+    "maxRent": 900,
     "sort": "publishDateDesc",
-    "from": "0",
-    "size": "20"
+    "offset": 0,
+    "limit": 20
 }
 
-def send_telegram(text):
+seen = set()
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": text
-    })
-
-def check_daft(initial=False):
-
+def check():
     try:
+        r = requests.get(URL, headers=HEADERS, params=PARAMS)
 
-        r = requests.get(API_URL, headers=HEADERS, params=PARAMS)
+        print("Status:", r.status_code)
 
         if r.status_code != 200:
-
-            print("API status:", r.status_code)
             return
 
         data = r.json()
 
-        listings = data.get("results", [])
+        listings = data.get("listings", [])
 
         for listing in listings:
 
-            ad_id = listing.get("adId")
+            id = listing.get("id")
 
-            if ad_id in sent_ids:
+            if id in seen:
                 continue
 
-            sent_ids.add(ad_id)
+            seen.add(id)
 
-            link = f"https://www.daft.ie/sharing/{ad_id}"
+            title = listing.get("title")
+            link = f"https://www.daft.ie{listing.get('seoFriendlyPath')}"
 
-            prefix = "🏠 Current listing:" if initial else "🏠 New listing:"
+            message = f"{title}\n{link}"
 
-            send_telegram(f"{prefix}\n{link}")
-
-            print("Sent:", link)
+            bot.send_message(CHAT_ID, message)
 
     except Exception as e:
+        print(e)
 
-        print("Error:", e)
 
 print("Bot started")
 
-send_telegram("✅ Bot started and monitoring Daft.ie")
-
-check_daft(initial=True)
-
 while True:
-
-    check_daft()
-
+    check()
     time.sleep(60)
