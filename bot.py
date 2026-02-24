@@ -1,22 +1,19 @@
 import os
 import time
 import requests
-from bs4 import BeautifulSoup
+import re
+import json
 
-# ====== Переменные ======
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 SEARCH_URL = os.environ.get("SEARCH_URL")
-COOKIE = os.environ.get("COOKIE")
+
+sent_links = set()
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Cookie": COOKIE
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 }
 
-sent_links = set()  # Уже отправленные ссылки
-
-# ====== Telegram ======
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {
@@ -29,55 +26,69 @@ def send_telegram(text):
     except Exception as e:
         print("Telegram error:", e)
 
-# ====== Парсер Daft ======
-def get_listings():
-    """Возвращает список ссылок текущих объявлений"""
+def extract_listings(html):
+    listings = []
+
+    # Ищем JSON внутри страницы
+    match = re.search(r'window\.__PRELOADED_STATE__ = ({.*});', html)
+
+    if not match:
+        print("JSON not found")
+        return listings
+
+    try:
+        data = json.loads(match.group(1))
+
+        ads = data["search"]["results"]["ads"]
+
+        for ad in ads:
+            link = "https://www.daft.ie" + ad["seoFriendlyPath"]
+            listings.append(link)
+
+    except Exception as e:
+        print("JSON parse error:", e)
+
+    return listings
+
+def check_daft(initial=False):
+
     try:
         r = requests.get(SEARCH_URL, headers=HEADERS)
     except Exception as e:
         print("Request error:", e)
-        return []
+        return
 
     if r.status_code != 200:
         print("Status code:", r.status_code)
-        return []
+        return
 
-    soup = BeautifulSoup(r.text, "lxml")
-    articles = soup.find_all("article")
+    listings = extract_listings(r.text)
 
-    links = []
-    for art in articles:
-        link_tag = art.find("a", href=True)
-        if link_tag:
-            link = "https://www.daft.ie" + link_tag['href']
-            links.append(link)
-
-    return links
-
-def check_daft(initial=False):
-    listings = get_listings()
     if not listings:
         print("No listings found")
         return
 
-    new_found = False
     for link in listings:
+
         if link not in sent_links:
+
             sent_links.add(link)
+
             prefix = "🏠 Current listing:" if initial else "🏠 New listing:"
+
             send_telegram(f"{prefix}\n{link}")
-            new_found = True
 
-    if not new_found and not initial:
-        print("No new listings")
+            print("Sent:", link)
 
-# ====== Главный цикл ======
 print("Bot started")
 send_telegram("✅ Bot started and monitoring Daft.ie")
 
-# Сначала пришлём все существующие объявления
+# Отправить все текущие
 check_daft(initial=True)
 
-# Затем мониторим новые
+# Мониторинг новых
 while True:
+
     check_daft()
+
+    time.sleep(60)
